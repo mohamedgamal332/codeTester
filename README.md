@@ -2,6 +2,9 @@
 
 A comprehensive desktop application for code analysis, testing, and AI-powered code review with a VSCode-like interface.
 
+![the model in action](image.png)
+
+
 ![Code Analyzer](https://img.shields.io/badge/Python-3.8+-blue.svg)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)

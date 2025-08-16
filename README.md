@@ -60,12 +60,191 @@ Code Analyzer is a powerful desktop application designed for developers who want
 - **Line of Code Metrics**: Comprehensive code size analysis
 - **Complexity Assessment**: Detailed complexity calculations
 
+### 🔧 Embedded Microcontroller Testing
+
+The Code Analyzer now includes comprehensive embedded microcontroller testing capabilities, supporting multiple platforms and frameworks.
+
+### Supported Platforms
+
+| Platform | Framework | Compiler | Flash Tool | Serial Port |
+|----------|-----------|----------|------------|-------------|
+| **ESP32** | ESP-IDF | GCC | esptool.py | /dev/ttyUSB0 |
+| **STM32** | STM32CubeIDE | ARM GCC | st-flash | /dev/ttyACM0 |
+| **AVR** | Arduino | AVR GCC | avrdude | /dev/ttyUSB0 |
+| **PIC** | MPLAB | XC8 | pk2cmd | /dev/ttyUSB0 |
+| **Renesas** | e2studio | GCC | rlink | /dev/ttyUSB0 |
+| **Holtek** | HT-IDE | HT-ICE | ht-ice | /dev/ttyUSB0 |
+
+### Framework Structure
+
+Each framework follows a standardized directory structure:
+
+```
+esp_idf/
+├── frameworks.json          # Framework configurations
+├── esp32/
+│   ├── compiler.sh         # ESP32 compilation script
+│   ├── src/                # Source files
+│   └── build/              # Compiled output
+├── stm32/
+│   ├── compiler.sh         # STM32 compilation script
+│   ├── src/                # Source files
+│   └── build/              # Compiled output
+└── [other_platforms]/
+```
+
+### Using Embedded Testing
+
+#### 1. ESP-IDF Environment Setup (Required First)
+Before using ESP32 embedded testing, you must set up the ESP-IDF environment:
+
+```bash
+# Navigate to your project directory
+cd /path/to/your/project
+
+# Set up ESP-IDF environment
+cd esp-idf
+./install.sh
+source export.sh
+
+# Verify setup
+idf.py --version
+```
+
+**Note**: The ESP-IDF environment must be sourced in every new terminal session where you want to use embedded testing.
+
+#### 2. Framework Selection
+1. Click "🔧 Setup ESP-IDF" in the preview panel toolbar to check your setup
+2. Select your target framework from the dropdown
+3. Review framework information and configuration
+4. The system will automatically validate your setup
+
+#### 3. Compilation
+1. Click "🔨 Compile" to build your firmware
+2. Monitor compilation progress in real-time
+3. Review build output and statistics
+4. Address any compilation errors
+
+#### 4. Flashing
+1. Connect your microcontroller via USB
+2. Click "⚡ Flash" to deploy firmware
+3. Monitor flashing progress
+4. Verify successful deployment
+
+#### 5. Testing
+1. Click "🚀 Flash & Test" for complete workflow
+2. Monitor serial output in real-time
+3. Watch for pass/fail keywords
+4. Review test results and timing
+
+### Configuration Options
+
+#### Serial Port Settings
+- **Port Selection**: Choose from available serial ports
+- **Baud Rate**: Configure communication speed (9600-460800)
+- **Auto-Detection**: Automatic port discovery and validation
+
+#### Test Parameters
+- **Timeout**: Configurable test duration (default: 30 seconds)
+- **Success Keywords**: Customizable pass indicators
+- **Failure Keywords**: Customizable fail indicators
+
+#### Framework Validation
+- **Compile Script**: Verify compilation script exists
+- **Flash Tools**: Check flash command availability
+- **Serial Port**: Validate serial port accessibility
+
+### Adding New Platforms
+
+To add support for a new microcontroller platform:
+
+1. **Create Framework Directory**:
+   ```bash
+   mkdir -p esp_idf/new_platform
+   ```
+
+2. **Add Compilation Script**:
+   ```bash
+   # esp_idf/new_platform/compiler.sh
+   #!/bin/bash
+   echo "Compiling for new platform..."
+   # Your compilation commands here
+   ```
+
+3. **Update Configuration**:
+   ```json
+   // esp_idf/frameworks.json
+   {
+     "new_platform": {
+       "display_name": "New Platform (Framework)",
+       "compile_script": "new_platform/compiler.sh",
+       "output_path": "new_platform/build/firmware.bin",
+       "flash_command": ["flash_tool", "args"],
+       "serial_port": "/dev/ttyUSB0",
+       "baudrate": 115200,
+       "success_keywords": ["PASS", "SUCCESS"],
+       "failure_keywords": ["FAIL", "ERROR"],
+       "timeout": 30,
+       "description": "Description of the platform"
+     }
+   }
+   ```
+
+### Hardware Requirements
+
+#### For ESP32 Testing
+- ESP32 development board
+- USB-C cable
+- ESP-IDF development environment (optional)
+
+#### For STM32 Testing
+- STM32 development board
+- ST-Link programmer
+- ARM GCC toolchain
+
+#### For AVR Testing
+- AVR development board
+- USBasp programmer
+- AVR GCC toolchain
+
+#### For Other Platforms
+- Respective development board
+- Compatible programmer/debugger
+- Platform-specific toolchain
+
+### Troubleshooting
+
+#### Common Issues
+1. **Serial Port Not Found**
+   - Check USB connection
+   - Verify device permissions
+   - Install USB drivers if needed
+
+2. **Flash Command Failed**
+   - Verify toolchain installation
+   - Check board connections
+   - Ensure correct flash addresses
+
+3. **Compilation Errors**
+   - Review compiler script
+   - Check source file paths
+   - Verify toolchain setup
+
+#### Debugging Tips
+- Use "Validate Framework" to check configuration
+- Monitor serial output for detailed error messages
+- Check system logs for hardware issues
+- Verify toolchain and SDK installations
+
 ### 🤖 AI Integration
 - **Intelligent Code Review**: AI-powered code quality assessment
 - **Smart Suggestions**: Context-aware code improvements
 - **Bug Detection**: AI-assisted bug identification
 - **Best Practices**: Automated coding standard recommendations
-- **Documentation Generation**: AI-generated code documentation
+- **Documentation**: AI-generated code documentation
+- **Targeted Code Changes**: Apply specific AI suggestions to targeted parts of code
+- **Diff Preview**: Preview changes before applying them
+- **Automatic Backups**: Git-like backup system for safe code modifications
 
 ### 🎨 User Interface
 - **VSCode-like Experience**: Familiar interface for developers
@@ -196,8 +375,15 @@ Results appear in the preview panel on the right side of the interface.
 
 #### Opening Files
 - **Double-click** any file in the file explorer
+- **Single-click** to select a file, then press **Enter** to open it
 - **Drag and drop** files into the editor
 - Use **Ctrl+O** to open files via dialog
+
+#### File Selection Behavior
+- **Automatic Selection**: When you open a file, it's automatically selected in the file explorer
+- **Tab Synchronization**: When you switch tabs, the corresponding file is selected in the sidebar
+- **Active File Priority**: If no files are selected in the sidebar, tests run on the currently active file
+- **Visual Feedback**: Selected files are highlighted in the file explorer
 
 #### Tab Management
 - **Right-click** tabs for context menu (Close, Close All, Close Others)
@@ -207,6 +393,30 @@ Results appear in the preview panel on the right side of the interface.
 #### Saving Files
 - **Ctrl+S** to save current file
 - **Ctrl+Shift+S** to save as
+
+### Keyboard Shortcuts
+
+#### File Management
+- **Ctrl+O**: Open directory/folder
+- **Ctrl+S**: Save current file
+- **Ctrl+Shift+S**: Save file as
+- **Enter**: Open selected file from sidebar
+- **Ctrl+Return**: Open selected file from sidebar
+
+#### Tab Management
+- **Ctrl+Tab**: Switch between tabs
+- **Ctrl+W**: Close current tab (if implemented)
+- **Middle-click**: Close tab
+
+#### Testing
+- **Static Test**: Use sidebar button
+- **Dynamic Test**: Use sidebar button
+- **White Box Test**: Use sidebar button
+
+#### Navigation
+- **Arrow Keys**: Navigate file explorer
+- **Enter**: Open selected file
+- **Space**: Select/deselect file
 
 ### Code Analysis
 
@@ -348,6 +558,56 @@ The application integrates with DeepSeek's AI API for intelligent code analysis:
 - When API is unavailable, the application provides offline responses
 - Basic code analysis continues without AI features
 - No data is sent without user consent
+
+### 🎯 Targeted Code Changes
+
+The application now supports **Git-like targeted code modifications** instead of replacing entire files:
+
+#### How It Works
+1. **AI Analysis**: AI reviews your code and provides specific suggestions
+2. **Targeted Parsing**: The system parses AI suggestions to identify specific changes
+3. **Diff Preview**: You can preview exactly what will be changed
+4. **Safe Application**: Changes are applied only to targeted parts of your code
+5. **Automatic Backups**: Original files are backed up before any changes
+
+#### Supported Change Types
+- **Function Replacement**: Replace specific functions with improved versions
+- **Line Changes**: Modify individual lines of code
+- **Block Changes**: Replace ranges of lines
+- **Insertions**: Add new code after specific lines
+- **Class Modifications**: Update entire classes
+
+#### Example AI Suggestions
+```
+Replace function calculate_sum with:
+
+```python
+def calculate_sum(a, b):
+    """Calculate the sum of two numbers with input validation"""
+    if not isinstance(a, (int, float)) or not isinstance(b, (int, float)):
+        raise ValueError("Both arguments must be numbers")
+    return a + b
+```
+
+Change line 15 to:
+```python
+    result = a * b  # Fixed multiplication
+```
+
+Add after line 25:
+```python
+    def clear_history(self):
+        """Clear calculation history"""
+        self.history.clear()
+```
+```
+
+#### Safety Features
+- **Automatic Backups**: Files are backed up before any changes
+- **Confirmation Dialogs**: You must confirm before applying changes
+- **Diff Preview**: See exactly what will change before applying
+- **Rollback Capability**: Restore from backups if needed
+- **Change Validation**: System validates changes before applying
 
 ### AI Chat Interface
 
@@ -557,3 +817,4 @@ For support, questions, or contributions:
 **Made with ❤️ for developers**
 
 *Code Analyzer - Your comprehensive code analysis companion* 
+ 

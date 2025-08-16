@@ -133,6 +133,8 @@ class Sidebar:
         self.tree.bind('<Double-Button-1>', self.on_double_click)
         self.tree.bind('<Return>', self.on_double_click)
         self.tree.bind('<<TreeviewSelect>>', self.on_selection_change)
+        # Add Enter key binding for opening files
+        self.tree.bind('<Key-Return>', self.on_double_click)
 
         # Configure style
         style = ttk.Style()
@@ -202,6 +204,14 @@ class Sidebar:
             if path.is_file():
                 self.callbacks['open_file'](path)
 
+    def open_selected_file(self):
+        """Open the currently selected file in the editor"""
+        selected_file = self.get_currently_selected_file()
+        if selected_file and selected_file.is_file():
+            self.callbacks['open_file'](selected_file)
+            return True
+        return False
+
     def refresh_tree(self):
         if hasattr(self, 'current_directory'):
             self.populate_tree(self.current_directory)
@@ -214,6 +224,57 @@ class Sidebar:
         """Return list of selected file paths"""
         return [Path(item) for item in self.tree.selection()]
 
+    def select_file(self, file_path):
+        """Select a specific file in the tree view"""
+        try:
+            # Convert Path object to string for comparison
+            file_path_str = str(file_path)
+            
+            # Find the item in the tree
+            item_id = None
+            for item in self.tree.get_children():
+                if self._find_item_recursive(item, file_path_str):
+                    item_id = file_path_str
+                    break
+            
+            if item_id:
+                # Clear current selection
+                self.tree.selection_remove(self.tree.selection())
+                # Select the file
+                self.tree.selection_add(item_id)
+                self.tree.focus(item_id)
+                # Ensure the item is visible
+                self.tree.see(item_id)
+                # Update selection status
+                self.on_selection_change(None)
+                return True
+            return False
+        except Exception as e:
+            print(f"Error selecting file {file_path}: {e}")
+            return False
+
+    def _find_item_recursive(self, parent_item, target_path):
+        """Recursively search for an item in the tree"""
+        try:
+            # Check if current item matches
+            if parent_item == target_path:
+                return True
+            
+            # Check children
+            for child in self.tree.get_children(parent_item):
+                if self._find_item_recursive(child, target_path):
+                    return True
+            return False
+        except:
+            return False
+
+    def get_currently_selected_file(self):
+        """Get the currently selected file (single selection)"""
+        selected_items = self.get_selected_items()
+        if len(selected_items) == 1:
+            return selected_items[0]
+        return None
+
     def on_selection_change(self, event):
         """Update selection status when files are selected"""
         selected_items = self.get_selected_items()
@@ -221,6 +282,6 @@ class Sidebar:
             if len(selected_items) == 1:
                 self.selection_status.config(text=f"Selected: {selected_items[0].name}")
             else:
-                self.selection_status.config(text(f"Selected: {len(selected_items)} files"))
+                self.selection_status.config(text=f"Selected: {len(selected_items)} files")
         else:
             self.selection_status.config(text="No files selected")

@@ -1,6 +1,9 @@
 import tkinter as tk
 from tkinter import ttk
 from .theme import VSCodeTheme
+from .code_patcher import CodePatcher
+# Import the new QEMU-based system instead of the old one
+from .qemu_embedded_frameworks import QEMUEmbeddedFrameworks
 from fpdf import FPDF
 from tkinter import filedialog
 import requests
@@ -9,12 +12,18 @@ import threading
 import subprocess
 import sys
 import os
+from pathlib import Path
+from tkinter import messagebox
 
 class PreviewPanel:
     def __init__(self, parent):
         self.frame = ttk.Frame(parent)
         self.is_chat_visible = False
         self.chat_history = []  # Store chat conversation
+        self.code_patcher = CodePatcher()  # Initialize the code patcher
+        self.embedded_frameworks = QEMUEmbeddedFrameworks()  # Initialize embedded frameworks
+        self.current_framework = None
+        self.test_running = False
         self.setup_preview_panel()
 
     def setup_preview_panel(self):
@@ -30,6 +39,57 @@ class PreviewPanel:
             style='Accent.TButton'
         )
         review_code_btn.pack(side=tk.RIGHT, padx=5, pady=5)
+        
+        # Embedded Testing buttons
+        self.embedded_frame = ttk.Frame(self.toolbar)
+        self.embedded_frame.pack(side=tk.RIGHT, padx=5, pady=5)
+        
+        # Framework selection
+        self.framework_var = tk.StringVar()
+        self.framework_combo = ttk.Combobox(
+            self.embedded_frame,
+            textvariable=self.framework_var,
+            state='readonly',
+            width=20
+        )
+        self.framework_combo.pack(side=tk.LEFT, padx=(0, 5))
+        self.framework_combo.bind('<<ComboboxSelected>>', self.on_framework_selected)
+        
+        # Compile button
+        self.compile_btn = ttk.Button(
+            self.embedded_frame,
+            text="🔨 Compile",
+            command=self.compile_framework,
+            style='Accent.TButton'
+        )
+        self.compile_btn.pack(side=tk.LEFT, padx=(0, 2))
+        
+        # Flash button
+        self.flash_btn = ttk.Button(
+            self.embedded_frame,
+            text="⚡ Flash",
+            command=self.flash_framework,
+            style='Accent.TButton'
+        )
+        self.flash_btn.pack(side=tk.LEFT, padx=(0, 2))
+        
+        # Flash & Test button
+        self.flash_test_btn = ttk.Button(
+            self.embedded_frame,
+            text="🚀 Flash & Test",
+            command=self.flash_and_test,
+            style='Accent.TButton'
+        )
+        self.flash_test_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Status indicator
+        self.status_label = ttk.Label(
+            self.embedded_frame,
+            text="Ready",
+            foreground='#28a745',
+            font=('Segoe UI', 9, 'bold')
+        )
+        self.status_label.pack(side=tk.LEFT, padx=(10, 0))
         
         # Save PDF button
         save_pdf_btn = ttk.Button(
@@ -61,6 +121,24 @@ class PreviewPanel:
         preview_font_family = VSCodeTheme.PREVIEW_FONT_FAMILY
         preview_font_size = VSCodeTheme.PREVIEW_FONT_SIZE  # Use dedicated preview font size
         
+        # Try to use emoji-friendly fonts
+        emoji_fonts = ['Segoe UI Emoji', 'Noto Color Emoji', 'Apple Color Emoji', 'DejaVu Sans', 'Liberation Sans']
+        preview_font_family = None
+        
+        for font in emoji_fonts:
+            try:
+                # Test if font is available
+                test_label = tk.Label(self.frame, font=(font, 12))
+                test_label.destroy()
+                preview_font_family = font
+                break
+            except:
+                continue
+        
+        # Fallback to theme font if no emoji fonts available
+        if not preview_font_family:
+            preview_font_family = VSCodeTheme.PREVIEW_FONT_FAMILY
+        
         # Create frame for preview with scrollbar
         preview_container = ttk.Frame(self.preview_frame)
         preview_container.pack(fill=tk.BOTH, expand=True)
@@ -88,11 +166,253 @@ class PreviewPanel:
         self.preview.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         preview_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # Chat frame (initially hidden)
-        self.setup_chat_frame()
+        # Load available frameworks
+        self.load_frameworks()
+
+    def load_frameworks(self):
+        """Load available frameworks into the dropdown"""
+        frameworks = self.embedded_frameworks.get_frameworks()
+        framework_names = [f"{config.display_name} ({name})" for name, config in frameworks.items()]
         
-        # Initially hide the chat
-        self.is_chat_visible = False
+        self.framework_combo['values'] = framework_names
+        if framework_names:
+            self.framework_combo.set(framework_names[0])
+            self.on_framework_selected()
+
+    def on_framework_selected(self, event=None):
+        """Handle framework selection"""
+        selected = self.framework_var.get()
+        if not selected:
+            return
+        
+        # Extract framework name from display string
+        framework_name = selected.split('(')[-1].rstrip(')')
+        self.current_framework = self.embedded_frameworks.get_framework(framework_name)
+        
+        # Auto-setup framework environment if needed
+        if self.current_framework:
+            self.auto_setup_framework_if_needed(framework_name)
+    
+    def auto_setup_framework_if_needed(self, framework_name):
+        """Automatically set up framework environment if needed"""
+        def auto_setup():
+            try:
+                # Check if framework is ready
+                is_ready, message = self.embedded_frameworks.validate_framework(framework_name)
+                
+                if is_ready:
+                    self.frame.after(0, lambda: self.update_status(f"{framework_name.upper()} Ready", '#28a745'))
+                else:
+                    # Try to set up the framework automatically
+                    if self.embedded_frameworks._ensure_framework_environment(framework_name):
+                        self.frame.after(0, lambda: self.update_status(f"{framework_name.upper()} Ready", '#28a745'))
+                    else:
+                        self.frame.after(0, lambda: self.update_status(f"{framework_name.upper()} Setup Needed", '#ffc107'))
+                        self.frame.after(0, lambda: self.add_text(f"⚠️  {framework_name.upper()} framework setup needed. Some features may not work.\n"))
+            except Exception as e:
+                self.frame.after(0, lambda: self.update_status(f"{framework_name.upper()} Error", '#dc3545'))
+        
+        threading.Thread(target=auto_setup, daemon=True).start()
+
+    def update_status(self, text, color='#28a745'):
+        """Update the status indicator"""
+        self.status_label.configure(text=text, foreground=color)
+    
+    def reset_status(self):
+        """Reset status to ready state"""
+        self.status_label.configure(text="Ready", foreground='#28a745')
+    
+    def compile_framework(self):
+        """Compile the current framework"""
+        if not self.current_framework:
+            messagebox.showwarning("Warning", "Please select a framework first!")
+            return
+        
+        current_file = self._get_current_file()
+        if not current_file:
+            messagebox.showwarning("Warning", "No file selected for compilation!")
+            return
+        
+        # Use the new QEMU-based compilation
+        success, output = self.embedded_frameworks.compile_file_for_framework(
+            str(current_file), self.current_framework,
+            callback=lambda line: self.console_output.insert(tk.END, f"  [BUILD] {line}\n")
+        )
+        
+        if success:
+            self.console_output.insert(tk.END, "✅ Compilation successful!\n")
+            self.update_status("✅ Compilation successful!")
+        else:
+            self.console_output.insert(tk.END, f"❌ Compilation failed: {output}\n")
+            self.update_status("❌ Compilation failed!")
+        
+        self.console_output.see(tk.END)
+
+    def compile_finished(self, success, output):
+        """Handle compilation completion"""
+        if success:
+            self.update_status("Compiled", '#28a745')  # Green for success
+            self.add_text("\n✅ Compilation completed successfully!\n")
+        else:
+            self.update_status("Compile Failed", '#dc3545')  # Red for failure
+            self.add_text("\n❌ Compilation failed!\n")
+            self.add_text(output + "\n")
+
+    def flash_framework(self):
+        """Flash the current framework"""
+        if not self.current_framework:
+            messagebox.showwarning("Warning", "Please select a framework first!")
+            return
+        
+        current_file = self._get_current_file()
+        if not current_file:
+            messagebox.showwarning("Warning", "No file selected for flashing!")
+            return
+        
+        # Use the new QEMU-based flashing
+        success, output = self.embedded_frameworks.flash_file_for_framework(
+            str(current_file), self.current_framework,
+            callback=lambda line: self.console_output.insert(tk.END, f"  [FLASH] {line}\n")
+        )
+        
+        if success:
+            self.console_output.insert(tk.END, "✅ Flashing successful!\n")
+            self.update_status("✅ Flashing successful!")
+        else:
+            self.console_output.insert(tk.END, f"❌ Flashing failed: {output}\n")
+            self.update_status("❌ Flashing failed!")
+        
+        self.console_output.insert(tk.END, "\n")
+        self.console_output.see(tk.END)
+
+    def flash_finished(self, success, output):
+        """Handle flashing completion"""
+        if success:
+            self.update_status("Flashed", '#28a745')  # Green for success
+            self.add_text("\n✅ Flashing completed successfully!\n")
+        else:
+            self.update_status("Flash Failed", '#dc3545')  # Red for failure
+            self.add_text("\n❌ Flashing failed!\n")
+            self.add_text(output + "\n")
+
+    def flash_and_test(self):
+        """Flash and test the current framework"""
+        if not self.current_framework:
+            messagebox.showwarning("Warning", "Please select a framework first!")
+            return
+        
+        current_file = self._get_current_file()
+        if not current_file:
+            messagebox.showwarning("Warning", "No file selected for testing!")
+            return
+        
+        self.clear()
+        self.update_status("Starting Flash & Test...", '#17a2b8')
+        
+        # Step 1: Compile
+        self.add_text(f"🚀 Starting Dynamic Testing for {current_file.name} on {self.current_framework.display_name}...\n")
+        self.add_text("=" * 60 + "\n\n")
+        self.add_text("📋 Workflow Steps:\n")
+        self.add_text("   1. 🔨 Compile your source file\n")
+        self.add_text("   2. ⚡ Flash to device\n")
+        self.add_text("   3. 📡 Monitor serial output\n")
+        self.add_text("   4. ✅ Analyze test results\n\n")
+        
+        # Step 1: Compile
+        self.add_text("🔨 Step 1: Compiling your source file...\n")
+        success, output = self.embedded_frameworks.compile_file_for_framework(
+            str(current_file), self.current_framework.name,
+            callback=lambda line: self.add_text(f"  [BUILD] {line}\n")
+        )
+        
+        if not success:
+            self.add_text(f"❌ Compilation failed! Stopping workflow.\n{output}\n")
+            self.update_status("❌ Compilation failed!", '#dc3545')
+            return
+        
+        self.add_text("✅ Compilation successful!\n\n")
+        
+        # Step 2: Flash
+        self.add_text("⚡ Step 2: Flashing your code to device...\n")
+        flash_success, flash_output = self.embedded_frameworks.flash_file_for_framework(
+            str(current_file), self.current_framework.name,
+            callback=lambda line: self.add_text(f"  [FLASH] {line}\n")
+        )
+        
+        if not flash_success:
+            self.add_text(f"❌ Flashing failed! Stopping workflow.\n{flash_output}\n")
+            self.update_status("❌ Flashing failed!", '#dc3545')
+            return
+        
+        self.add_text("✅ Flashing successful!\n\n")
+        
+        # Step 3: Test with QEMU
+        self.add_text("📡 Step 3: Running QEMU test...\n")
+        
+        # Find the compiled binary
+        build_dir = current_file.parent / 'build'
+        base_name = current_file.stem
+        framework = self.embedded_frameworks.get_framework(self.current_framework.name)
+        if framework:
+            output_path = build_dir / f"{base_name}{framework.output_format}"
+            
+            if output_path.exists():
+                # Run QEMU test
+                test_success, test_output = self.embedded_frameworks.run_qemu_test(
+                    self.current_framework.name, str(output_path),
+                    callback=lambda line: self.add_text(f"  [QEMU] {line}\n"),
+                    timeout_callback=lambda: self.add_text("  [QEMU] Timeout reached\n")
+                )
+                
+                if test_success:
+                    self.add_text("✅ QEMU test completed successfully!\n\n")
+                    self.update_status("✅ Test completed!", '#28a745')
+                else:
+                    self.add_text(f"❌ QEMU test failed: {test_output}\n\n")
+                    self.update_status("❌ Test failed!", '#dc3545')
+            else:
+                self.add_text(f"❌ Compiled binary not found: {output_path}\n")
+                self.update_status("❌ Binary not found!", '#dc3545')
+        else:
+            self.add_text("❌ Framework configuration not found\n")
+            self.update_status("❌ Framework error!", '#dc3545')
+        
+        self.add_text("🎯 Dynamic Testing workflow completed!\n")
+        self.console_output.see(tk.END)
+
+    def test_finished(self, success, output):
+        """Handle test completion with enhanced result visualization"""
+        if success:
+            self.update_status("Test Passed", '#28a745')  # Green for success
+            self.add_text("🎉 DYNAMIC TEST PASSED! 🎉\n")
+            self.add_text("=" * 60 + "\n")
+            self.add_text("✅ Device is functioning correctly\n")
+            self.add_text("✅ Firmware compiled and flashed successfully\n")
+            self.add_text("✅ Runtime behavior meets expectations\n")
+            self.add_text("✅ Success keywords detected in serial output\n\n")
+        else:
+            self.update_status("Test Failed", '#dc3545')  # Red for failure
+            self.add_text("💥 DYNAMIC TEST FAILED! 💥\n")
+            self.add_text("=" * 60 + "\n")
+            self.add_text("❌ Test did not complete successfully\n")
+            self.add_text("❌ Check device connection and firmware\n")
+            self.add_text("❌ Review serial output for errors\n\n")
+        
+        # Add detailed output analysis
+        self.add_text("📊 Detailed Test Output:\n")
+        self.add_text("-" * 40 + "\n")
+        self.add_text(output + "\n")
+        
+        # Add summary
+        self.add_text("\n" + "=" * 60 + "\n")
+        if success:
+            self.add_text("🎯 RECOMMENDATION: Device is ready for production deployment\n")
+        else:
+            self.add_text("🔧 RECOMMENDATION: Investigate and fix issues before deployment\n")
+        self.add_text("=" * 60 + "\n")
+        
+        # Reset status after a delay
+        self.frame.after(5000, self.reset_status)
 
     def setup_chat_frame(self):
         self.chat_frame = ttk.Frame(self.paned_window)
@@ -104,6 +424,24 @@ class PreviewPanel:
         # Enhanced font settings for chat display
         chat_font_family = VSCodeTheme.PREVIEW_FONT_FAMILY
         chat_font_size = VSCodeTheme.CHAT_FONT_SIZE  # Use dedicated chat font size
+        
+        # Try to use emoji-friendly fonts for chat too
+        emoji_fonts = ['Segoe UI Emoji', 'Noto Color Emoji', 'Apple Color Emoji', 'DejaVu Sans', 'Liberation Sans']
+        chat_font_family = None
+        
+        for font in emoji_fonts:
+            try:
+                # Test if font is available
+                test_label = tk.Label(self.frame, font=(font, 12))
+                test_label.destroy()
+                chat_font_family = font
+                break
+            except:
+                continue
+        
+        # Fallback to theme font if no emoji fonts available
+        if not chat_font_family:
+            chat_font_family = VSCodeTheme.PREVIEW_FONT_FAMILY
 
         self.chat_display = tk.Text(
             chat_display_frame,
@@ -169,6 +507,24 @@ class PreviewPanel:
         # Enhanced font settings for message input
         input_font_family = 'Segoe UI'
         input_font_size = 11
+        
+        # Try to use emoji-friendly fonts for input too
+        emoji_fonts = ['Segoe UI Emoji', 'Noto Color Emoji', 'Apple Color Emoji', 'DejaVu Sans', 'Liberation Sans']
+        input_font_family = None
+        
+        for font in emoji_fonts:
+            try:
+                # Test if font is available
+                test_label = tk.Label(self.frame, font=(font, 12))
+                test_label.destroy()
+                input_font_family = font
+                break
+            except:
+                continue
+        
+        # Fallback to default if no emoji fonts available
+        if not input_font_family:
+            input_font_family = 'Segoe UI'
 
         # Create a beautiful, modern input field
         self.message_input = tk.Text(
@@ -497,13 +853,21 @@ class PreviewPanel:
             with open(current_file, 'r', encoding='utf-8') as f:
                 code_content = f.read()
             
-            # Create review prompt
-            review_prompt = f"""Please review this code and provide feedback on:
-1. Code quality and best practices
-2. Potential bugs or issues
-3. Performance improvements
-4. Security concerns
-5. Suggestions for better structure or readability
+            # Create review prompt that asks for targeted suggestions
+            review_prompt = f"""Please review this code and provide specific, targeted suggestions for improvement.
+
+For each suggestion, please specify exactly what should be changed:
+1. If suggesting a function change, say "Replace function X with:" followed by the new code
+2. If suggesting a line change, say "Change line X to:" followed by the new line
+3. If suggesting a block change, say "Replace lines X-Y with:" followed by the new code
+4. If suggesting an addition, say "Add after line X:" followed by the new code
+
+Focus on:
+- Code quality and best practices
+- Potential bugs or issues
+- Performance improvements
+- Security concerns
+- Better structure or readability
 
 Here's the code to review:
 
@@ -511,7 +875,7 @@ Here's the code to review:
 {code_content}
 ```
 
-Please provide a comprehensive review with specific suggestions for improvement."""
+Please provide specific, actionable suggestions with clear instructions on what to change."""
 
             # Update status: Sending to AI
             self.clear()
@@ -535,10 +899,18 @@ Please provide a comprehensive review with specific suggestions for improvement.
                 self.add_text("-" * 30 + "\n\n")
                 
                 if response:
+                    # Store the response for potential application
+                    self.last_ai_response = response
+                    self.last_reviewed_file = current_file
+                    
                     # Add the response with proper line breaks
                     self.add_text(response + "\n\n")
                     self.add_text("=" * 50 + "\n")
-                    self.add_text("✅ Review completed successfully!\n")
+                    self.add_text("✅ Review completed successfully!\n\n")
+                    
+                    # Add apply changes button
+                    self.add_apply_changes_button()
+                    
                     print(f"DEBUG: Full response displayed, length: {len(response)}")
                 else:
                     self.add_text("❌ No response received from AI\n\n")
@@ -565,6 +937,214 @@ Please provide a comprehensive review with specific suggestions for improvement.
             self.add_text(f"❌ Error reviewing code: {str(e)}")
             # Ensure the preview scrolls to show all content
             self.preview.see(tk.END)
+
+    def add_apply_changes_button(self):
+        """Add a button to apply AI suggestions"""
+        # Create a frame for the button
+        button_frame = ttk.Frame(self.preview_frame)
+        button_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        # Apply Changes button
+        apply_btn = ttk.Button(
+            button_frame,
+            text="🔧 Apply AI Suggestions",
+            command=self.apply_ai_suggestions,
+            style='Accent.TButton'
+        )
+        apply_btn.pack(side=tk.RIGHT, padx=5)
+        
+        # Preview Changes button
+        preview_btn = ttk.Button(
+            button_frame,
+            text="👁️ Preview Changes",
+            command=self.preview_ai_changes,
+            style='Accent.TButton'
+        )
+        preview_btn.pack(side=tk.RIGHT, padx=5)
+
+    def apply_ai_suggestions(self):
+        """Apply AI suggestions using targeted changes"""
+        try:
+            if not hasattr(self, 'last_ai_response') or not hasattr(self, 'last_reviewed_file'):
+                self.add_text("❌ No AI suggestions available to apply\n")
+                return
+            
+            current_file = self.last_reviewed_file
+            
+            # Show confirmation dialog
+            if not self._confirm_ai_changes(current_file):
+                return
+            
+            # Apply targeted changes
+            result = self.code_patcher.apply_targeted_changes(current_file, self.last_ai_response)
+            
+            if result['success']:
+                # Refresh the editor
+                self._refresh_editor(current_file)
+                
+                # Show success message
+                self.add_text("\n" + "=" * 50 + "\n")
+                self.add_text("✅ AI suggestions applied successfully!\n")
+                self.add_text(f"📁 Backup created: {result['backup_path'].name}\n")
+                self.add_text(f"🔧 Changes applied: {len(result['changes_applied'])}\n")
+                
+                # Show details of applied changes
+                for i, change in enumerate(result['changes_applied'], 1):
+                    self.add_text(f"   {i}. {change.get('type', 'Unknown')} change\n")
+                
+            else:
+                self.add_text("\n" + "=" * 50 + "\n")
+                self.add_text("❌ Failed to apply AI suggestions\n")
+                self.add_text(f"Error: {result['error']}\n")
+                
+        except Exception as e:
+            self.add_text(f"\n❌ Error applying AI suggestions: {str(e)}\n")
+
+    def preview_ai_changes(self):
+        """Preview what changes would be applied"""
+        try:
+            if not hasattr(self, 'last_ai_response') or not hasattr(self, 'last_reviewed_file'):
+                self.add_text("❌ No AI suggestions available to preview\n")
+                return
+            
+            current_file = self.last_reviewed_file
+            
+            # Read original file
+            with open(current_file, 'r', encoding='utf-8') as f:
+                original_lines = f.readlines()
+            
+            # Parse AI suggestions
+            changes = self.code_patcher._parse_ai_suggestions(self.last_ai_response)
+            
+            if not changes:
+                self.add_text("❌ No valid changes found in AI suggestions\n")
+                return
+            
+            # Apply changes to a copy
+            modified_lines = original_lines.copy()
+            applied_changes = []
+            
+            for change in changes:
+                result = self.code_patcher._apply_single_change(modified_lines, change)
+                if result['success']:
+                    applied_changes.append(result)
+                    modified_lines = result['new_lines']
+            
+            if applied_changes:
+                # Create diff preview
+                diff = self.code_patcher.create_diff_preview(original_lines, modified_lines)
+                
+                # Show preview dialog
+                self._show_diff_preview(diff, current_file)
+            else:
+                self.add_text("❌ No changes could be applied\n")
+                
+        except Exception as e:
+            self.add_text(f"\n❌ Error previewing changes: {str(e)}\n")
+
+    def _confirm_ai_changes(self, file_path):
+        """Show confirmation dialog for applying AI changes"""
+        dialog = tk.Toplevel(self.frame.winfo_toplevel())
+        dialog.title("Apply AI Suggestions")
+        dialog.geometry("400x200")
+        dialog.configure(bg=VSCodeTheme.BACKGROUND)
+        
+        # Make dialog modal
+        dialog.transient(self.frame.winfo_toplevel())
+        dialog.grab_set()
+        
+        # Center the dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (400 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (200 // 2)
+        dialog.geometry(f"400x200+{x}+{y}")
+        
+        # Content
+        content_frame = ttk.Frame(dialog)
+        content_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        ttk.Label(content_frame, 
+                 text=f"Apply AI suggestions to {file_path.name}?", 
+                 style='Dark.TLabel').pack(pady=(0, 10))
+        
+        ttk.Label(content_frame, 
+                 text="This will apply targeted changes based on AI suggestions.\nA backup will be created automatically.",
+                 style='Dark.TLabel').pack(pady=(0, 20))
+        
+        # Buttons
+        button_frame = ttk.Frame(content_frame)
+        button_frame.pack(pady=10)
+        
+        confirmed = [False]
+        
+        def on_confirm():
+            confirmed[0] = True
+            dialog.destroy()
+        
+        def on_cancel():
+            confirmed[0] = False
+            dialog.destroy()
+        
+        ttk.Button(button_frame, text="Apply", command=on_confirm).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=on_cancel).pack(side=tk.LEFT, padx=5)
+        
+        # Wait for dialog to close
+        dialog.wait_window()
+        return confirmed[0]
+
+    def _show_diff_preview(self, diff, file_path):
+        """Show a dialog with diff preview"""
+        dialog = tk.Toplevel(self.frame.winfo_toplevel())
+        dialog.title(f"Preview Changes - {file_path.name}")
+        dialog.geometry("800x600")
+        dialog.configure(bg=VSCodeTheme.BACKGROUND)
+        
+        # Make dialog modal
+        dialog.transient(self.frame.winfo_toplevel())
+        dialog.grab_set()
+        
+        # Center the dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (800 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (600 // 2)
+        dialog.geometry(f"800x600+{x}+{y}")
+        
+        # Content
+        content_frame = ttk.Frame(dialog)
+        content_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        ttk.Label(content_frame, 
+                 text=f"Preview of changes to {file_path.name}:", 
+                 style='Dark.TLabel').pack(pady=(0, 10))
+        
+        # Diff text widget
+        diff_text = tk.Text(
+            content_frame,
+            bg=VSCodeTheme.EDITOR_BG,
+            fg=VSCodeTheme.FOREGROUND,
+            font=('Consolas', 10),
+            wrap='none'
+        )
+        diff_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Add scrollbars
+        diff_scrollbar_y = ttk.Scrollbar(content_frame, orient="vertical", command=diff_text.yview)
+        diff_scrollbar_y.pack(side=tk.RIGHT, fill=tk.Y)
+        diff_text.configure(yscrollcommand=diff_scrollbar_y.set)
+        
+        diff_scrollbar_x = ttk.Scrollbar(content_frame, orient="horizontal", command=diff_text.xview)
+        diff_scrollbar_x.pack(side=tk.BOTTOM, fill=tk.X)
+        diff_text.configure(xscrollcommand=diff_scrollbar_x.set)
+        
+        # Insert diff content
+        diff_text.insert('1.0', diff)
+        diff_text.configure(state='disabled')
+        
+        # Buttons
+        button_frame = ttk.Frame(content_frame)
+        button_frame.pack(pady=10)
+        
+        ttk.Button(button_frame, text="Close", command=dialog.destroy).pack(side=tk.RIGHT, padx=5)
 
     def _update_review_status(self, status_message):
         """Update the review status in the preview panel"""
@@ -801,7 +1381,7 @@ User Message: {user_message}
             fg='#ffffff',  # Pure white text for maximum visibility
             insertbackground='#ffffff',
             relief='flat',
-            font=('Consolas', 10),
+            font=('Consolas', 10),  # Keep Consolas for code, but ensure emoji support
             wrap='word',
             height=min(20, len(code.split('\n')) + 2),  # Dynamic height
             padx=10,
@@ -949,7 +1529,7 @@ User Message: {user_message}
         self._apply_code_changes(code_block)
 
     def _apply_code_changes(self, code_block):
-        """Apply code changes to the current file"""
+        """Apply code changes to the current file using targeted patching"""
         try:
             # Get the current active file from the main editor
             current_file = self._get_current_file()
@@ -962,36 +1542,34 @@ User Message: {user_message}
             if not self._confirm_code_application(code_block, current_file):
                 return
             
-            # Apply the changes
-            self._write_code_to_file(current_file, code_block['code'])
+            # Create a mock AI response with the code block
+            ai_response = f"Replace the current code with:\n\n```{code_block.get('language', 'text')}\n{code_block['code']}\n```"
             
+            # Apply targeted changes
+            result = self.code_patcher.apply_targeted_changes(current_file, ai_response)
+            
+            if result['success']:
             # Refresh the editor
             self._refresh_editor(current_file)
             
             self.add_to_chat(f"✅ Code changes applied to {current_file.name}", is_user=False)
+                self.add_to_chat(f"📁 Backup created: {result['backup_path'].name}", is_user=False)
+            else:
+                self.add_to_chat(f"❌ Failed to apply changes: {result['error']}", is_user=False)
             
         except Exception as e:
             self.add_to_chat(f"❌ Error applying code changes: {str(e)}", is_user=False)
 
     def _get_current_file(self):
-        """Get the currently active file from the main editor"""
+        """Get the currently active file from the editor"""
         try:
-            # Use direct reference to main application if available
-            if hasattr(self, 'main_app') and self.main_app:
-                return self.main_app.get_current_file()
-            
-            # Fallback: Get the main application instance by traversing up the widget hierarchy
-            current_widget = self.frame
-            while current_widget and not hasattr(current_widget, 'get_current_file'):
-                current_widget = current_widget.master
-            
-            if current_widget and hasattr(current_widget, 'get_current_file'):
-                return current_widget.get_current_file()
-            else:
-                # Try alternative approach - look for the main application
-                for widget in self.frame.winfo_toplevel().winfo_children():
-                    if hasattr(widget, 'get_current_file'):
-                        return widget.get_current_file()
+            # Get the current tab from the editor
+            current_tab = self.editor.get_current_tab()
+            if current_tab:
+                # Get the file path from the tab
+                file_path = self.editor.get_tab_file_path(current_tab)
+                if file_path and os.path.exists(file_path):
+                    return Path(file_path)
                 return None
         except Exception as e:
             print(f"Error getting current file: {e}")
@@ -1155,7 +1733,7 @@ User Message: {user_message}
             fg='#ffffff',  # Pure white text for maximum visibility
             insertbackground='#ffffff',
             relief='flat',
-            font=('Consolas', 10),
+            font=('Consolas', 10),  # Keep Consolas for code, but ensure emoji support
             wrap='word',
             height=min(15, len(code.split('\n')) + 2),  # Dynamic height
             padx=10,

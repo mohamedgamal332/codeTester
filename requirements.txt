@@ -10,6 +10,9 @@ fpdf>=2.7.0
 # HTTP Requests for API Integration
 requests>=2.31.0
 
+# Serial Communication for Embedded Testing
+pyserial>=3.5
+
 # Optional: Enhanced Development Tools
 # Uncomment the following lines for development
 

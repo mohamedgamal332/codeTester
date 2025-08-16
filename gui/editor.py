@@ -35,6 +35,8 @@ class VSCodeLikeGUI:
         # Bind shortcuts
         self.root.bind('<Control-s>', self.save_current_file)
         self.root.bind('<Control-o>', self.open_directory)
+        self.root.bind('<Return>', self.open_selected_file_from_sidebar)
+        self.root.bind('<Control-Return>', self.open_selected_file_from_sidebar)
 
     def setup_fonts(self):
         available_fonts = tkfont.families()
@@ -84,6 +86,7 @@ class VSCodeLikeGUI:
             # Create preview panel
             self.preview_panel = PreviewPanel(self.content_container)
             self.preview_panel.main_app = self  # Add reference to main application
+            self.preview_panel.editor = self  # Add reference to editor for file access
             self.content_container.add(self.preview_panel.frame, weight=1)
             
             print("Main interface setup completed")
@@ -143,6 +146,9 @@ class VSCodeLikeGUI:
                 self.tab_bar.select(tab_frame)
                 self.current_file = file_path
                 
+                # Select the file in the sidebar
+                self.sidebar.select_file(file_path)
+                
                 self.status_bar.show_message(f"Opened and activated: {file_path.name}")
                 
             except Exception as e:
@@ -153,6 +159,8 @@ class VSCodeLikeGUI:
                 if path == file_path:
                     self.tab_bar.select(index)
                     self.current_file = file_path
+                    # Select the file in the sidebar
+                    self.sidebar.select_file(file_path)
                     self.status_bar.show_message(f"Switched to: {file_path.name}")
                     break
 
@@ -178,16 +186,35 @@ class VSCodeLikeGUI:
         if current_tab:
             tab_id = self.tab_bar.index(current_tab)
             self.current_file = list(self.files.keys())[tab_id]
+            # Select the file in the sidebar when tab changes
+            self.sidebar.select_file(self.current_file)
             # Update status to show which file is now active
             self.status_bar.show_message(f"Switched to: {self.current_file.name}")
         else:
             self.current_file = None
             self.status_bar.show_message("No file is currently active")
+    
+    def get_current_tab(self):
+        """Get the currently selected tab"""
+        return self.tab_bar.select()
+    
+    def get_tab_file_path(self, tab):
+        """Get the file path associated with a tab"""
+        if tab:
+            tab_id = self.tab_bar.index(tab)
+            if 0 <= tab_id < len(self.files):
+                return list(self.files.keys())[tab_id]
+        return None
 
     def run_static_test(self):
         """Run static analysis on selected files"""
         selected_items = self.sidebar.get_selected_items()
         if not selected_items:
+            # If no files selected in sidebar, use currently active file
+            if self.current_file:
+                selected_items = [self.current_file]
+                self.status_bar.show_message(f"Running static analysis on active file: {self.current_file.name}")
+            else:
             self.status_bar.show_message("No files selected for testing")
             return
         
@@ -241,6 +268,11 @@ class VSCodeLikeGUI:
         """Run dynamic tests on selected files"""
         selected_items = self.sidebar.get_selected_items()
         if not selected_items:
+            # If no files selected in sidebar, use currently active file
+            if self.current_file:
+                selected_items = [self.current_file]
+                self.status_bar.show_message(f"Running dynamic tests on active file: {self.current_file.name}")
+            else:
             self.status_bar.show_message("No files selected for testing")
             return
         
@@ -299,6 +331,11 @@ class VSCodeLikeGUI:
         """Run white box tests on selected files"""
         selected_items = self.sidebar.get_selected_items()
         if not selected_items:
+            # If no files selected in sidebar, use currently active file
+            if self.current_file:
+                selected_items = [self.current_file]
+                self.status_bar.show_message(f"Running white box analysis on active file: {self.current_file.name}")
+            else:
             self.status_bar.show_message("No files selected for testing")
             return
         
@@ -666,6 +703,20 @@ class VSCodeLikeGUI:
             return [self.current_file]
         else:
             return self.get_selected_files()
+
+    def open_selected_file_from_sidebar(self, event=None):
+        """Open the currently selected file from the sidebar"""
+        selected_file = self.sidebar.get_currently_selected_file()
+        if selected_file and selected_file.is_file():
+            self.open_file(selected_file)
+            return "break"  # Prevent default behavior
+        else:
+            self.status_bar.show_message("No file selected in sidebar")
+            return "break"
+
+    def get_currently_selected_file_from_sidebar(self):
+        """Get the currently selected file from the sidebar (single selection)"""
+        return self.sidebar.get_currently_selected_file()
 
     def refresh_file_content(self, file_path):
         """Refresh the content of a file in the editor"""

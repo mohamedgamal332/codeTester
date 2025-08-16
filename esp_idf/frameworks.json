@@ -1,0 +1,54 @@
+{
+  "esp32": {
+    "display_name": "ESP32 (ESP-IDF)",
+    "compile_script": "esp-idf/examples/get-started/hello_world",
+    "output_path": "esp_idf/examples/get-started/hello_world/build/hello_world.bin",
+    "flash_command": [
+      "idf.py",
+      "-p",
+      "{serial_port}",
+      "flash"
+    ],
+    "serial_port": "/dev/ttyUSB0",
+    "baudrate": 115200,
+    "success_keywords": ["Hello world!", "ESP32", "WiFi", "BT", "BLE", "CPU core", "flash", "Restarting in", "Restarting now"],
+    "failure_keywords": ["FAIL", "ERROR", "FAILED", "PANIC", "Exception", "assert failed", "abort()", "Get flash size failed"],
+    "timeout": 45,
+    "description": "ESP32 microcontroller with ESP-IDF framework for IoT applications"
+  },
+  "stm32": {
+    "display_name": "STM32 (ARM Cortex-M)",
+    "compile_script": "esp_idf/stm32/compiler.sh",
+    "output_path": "esp_idf/stm32/build/project.elf",
+    "flash_command": [
+      "st-flash",
+      "--reset",
+      "write",
+      "{output_path}",
+      "0x08000000"
+    ],
+    "serial_port": "/dev/ttyACM0",
+    "baudrate": 115200,
+    "success_keywords": ["PASS", "SUCCESS", "OK", "STM32 Ready", "System Ready"],
+    "failure_keywords": ["FAIL", "ERROR", "FAILED", "HALT", "HardFault"],
+    "timeout": 30,
+    "description": "STM32 microcontroller with ARM Cortex-M core for embedded applications"
+  },
+  "avr": {
+    "display_name": "AVR (Arduino)",
+    "compile_script": "esp_idf/avr/compiler.sh",
+    "output_path": "esp_idf/avr/build/project.hex",
+    "flash_command": [
+      "avrdude",
+      "-c", "usbasp",
+      "-p", "atmega328p",
+      "-U", "flash:w:{output_path}:i"
+    ],
+    "serial_port": "/dev/ttyUSB0",
+    "baudrate": 9600,
+    "success_keywords": ["PASS", "SUCCESS", "OK", "AVR Ready", "Setup Complete"],
+    "failure_keywords": ["FAIL", "ERROR", "FAILED", "Watchdog Reset"],
+    "timeout": 30,
+    "description": "AVR microcontroller with Arduino framework for simple embedded projects"
+  }
+} 
